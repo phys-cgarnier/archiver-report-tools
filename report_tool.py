@@ -75,7 +75,7 @@ class ArchiverUtility:
                 if disconnected_status:
                     pv_connection = epics.PV(pv)
                     filtered['connected pv'] = pv_connection.connected
-                report[pv] = filtered
+                report.update(filtered)
 
         return report
 
