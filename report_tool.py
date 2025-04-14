@@ -1,17 +1,13 @@
 
-#TODO: test current functionality
-#TODO: add disconnection format
-#TODO: test for a folder
-#TODO: modify report format
-#TODO: make code unbreakable
-#TODO: make code more readable
+#TODO: last event should only be asked for if specified...
+#TODO: add dump file
 import argparse
 import os
 import requests
 import pprint
 import epics
 from typing import List, Dict
-
+import yaml
 
 class ArchiverUtility:
     def __init__(self, mode: str):
@@ -169,9 +165,17 @@ def main():
     pv_dict, _ = collect_pvs(args, util)
 
     for filename, pvs in pv_dict.items():
-        statuses = util.get_status(pvs, disconnected_status=args.disconnected_status, **search_kwargs)
-        print(f"\n--- Report for: {filename} ---")
-        #pprint.pprint(statuses)
+        status = util.get_status(pvs, disconnected_status=args.disconnected_status, **search_kwargs)  
+        report_key = os.path.basename(filename).replace('.archive', '.qa')
+        report_data = {
+        "source_file": filename,
+        "statuses": status
+    }
+
+        with open(report_key, "w") as f:
+            yaml.dump(report_data, f, default_flow_style=False)
+
+
 
 
 if __name__ == "__main__":
