@@ -64,7 +64,7 @@ class ArchiverUtility:
                     for k in filters
                     if k in response and (
                         filters[k] is None or
-                        (k == "last_event" and filters[k] in response[k]) or
+                        (k == "lastEvent" and filters[k] in response[k]) or
                         response[k] == filters[k]
                     )
                 }
@@ -110,9 +110,9 @@ def setup_search_kwargs(args: argparse.Namespace) -> Dict:
     """Return filtered search kwargs based on CLI options."""
     keyword_logic = {
         'Unarchived': lambda: {'status': 'Not being archived'},
-        'Paused': lambda: {'status': 'Paused', 'last_event': args.last_event},
+        'Paused': lambda: {'status': 'Paused', 'lastEvent': args.last_event},
         'Archived': lambda: {'status': 'Being archived'},
-        'All': lambda: {'status': None, 'last_event': args.last_event}
+        'All': lambda: {'status': None, 'lastEvent': args.last_event}
     }
 
     search_kwargs = keyword_logic[args.keyword]()
