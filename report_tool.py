@@ -77,7 +77,7 @@ class ArchiverUtility:
                     if not pv_connection.wait_for_connection(timeout=2.5):
                         filtered[pv]['connected pv'] = pv_connection.connected
                 report.update(filtered)
-
+            pprint.pprint(filtered)
         return report
 
 
@@ -169,7 +169,7 @@ def main():
     for filename, pvs in pv_dict.items():
         statuses = util.get_status(pvs, disconnected_status=args.disconnected_status, **search_kwargs)
         print(f"\n--- Report for: {filename} ---")
-        pprint.pprint(statuses)
+        #pprint.pprint(statuses)
 
 
 if __name__ == "__main__":
