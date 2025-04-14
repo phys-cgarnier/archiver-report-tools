@@ -74,7 +74,8 @@ class ArchiverUtility:
             if pv in filtered and filtered[pv] != {}:
                 if disconnected_status or filters['status'] is None:
                     pv_connection = epics.PV(pv)
-                    filtered[pv]['connected pv'] = pv_connection.connected
+                    if not pv.wait_for_connection(timeout=2.5):
+                        filtered[pv]['connected pv'] = pv_connection.connected
                 report.update(filtered)
 
         return report
