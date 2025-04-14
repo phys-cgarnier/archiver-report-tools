@@ -64,7 +64,7 @@ class ArchiverUtility:
                     for k in filters
                     if k in response and (
                         filters[k] is None or
-                        (k == "last_event" and filters[k] in response[k] or k == "last_event" and filters[k] is None) or
+                        (k == "last_event" and filters[k] in response[k]) or
                         response[k] == filters[k]
                     )
                 }
