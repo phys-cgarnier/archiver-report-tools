@@ -1,103 +1,129 @@
+
+#TODO: test current functionality
+#TODO: add disconnection format
+#TODO: test for a folder
+#TODO: modify report format
+#TODO: make code unbreakable
+#TODO: make code more readable
 import argparse
 import os
-import requests 
+import requests
 import pprint
 import epics
+from typing import List, Dict
+
 
 class ArchiverUtility:
-    def __init__(self, mode):
-        if (mode == "dev"):
-            self.web = "http://dev-archapp.slac.stanford.edu/mgmt/bpl/"
-            self.retrieval_url = 'http://dev-archapp.slac.stanford.edu:17668/retrieval/data/'
-            self.post_url = 'http://dev-archapp.slac.stanford.edu/retrieval/data/'
-        elif (mode == "lcls"):
-            self.web = "http://lcls-archapp.slac.stanford.edu/mgmt/bpl/"
-            self.retrieval_url = 'http://lcls-archapp.slac.stanford.edu:17668/retrieval/data/'
-            self.post_url = 'http://lcls-archapp.slac.stanford.edu/retrieval/data/'
-        elif (mode == "cryo"):
-            self.web = "http://cryo-archapp.slac.stanford.edu:17665/mgmt/bpl/"
-            self.retrieval_url = 'http://cryo-archapp.slac.stanford.edu:17668/retrieval/data/'
-            self.post_url = 'http://cryo-archapp.slac.stanford.edu/retrieval/data/'
-        else:
-            print("Error: Mode must be either 'dev' or 'lcls.' Defaulting to 'dev.'")
-            self.web = "http://dev-archapp.slac.stanford.edu/mgmt/bpl/"
-            self.retrieval_url = 'http://dev-archapp.slac.stanford.edu:17668/retrieval/data/'
-            self.post_url = 'http://dev-archapp.slac.stanford.edu/retrieval/data/'
+    def __init__(self, mode: str):
+        base_urls = {
+            "dev": "http://dev-archapp.slac.stanford.edu",
+            "lcls": "http://lcls-archapp.slac.stanford.edu",
+            "cryo": "http://cryo-archapp.slac.stanford.edu:17665"
+        }
 
-    def parse_pvs_and_params_from_archive_file(self, archive_filename:str):
+        base = base_urls.get(mode, base_urls["dev"])
+        if mode not in base_urls:
+            print("Warning: Invalid mode provided. Defaulting to 'dev'.")
+
+        self.web = f"{base}/mgmt/bpl/"
+        self.retrieval_url = f"{base.replace(':17665', '')}:17668/retrieval/data/"
+        self.post_url = f"{base.replace(':17665', '')}/retrieval/data/"
+
+    def get_pv_status(self, pv: str) -> Dict:
+        """Request current archiver status for a single PV."""
+        url = self.web + "getPVStatus"
+        response = requests.get(url, params={'pv': pv})
+        response.raise_for_status()
+        return response.json()[0]
+    
+    def parse_archive_file(self, archive_filename: str):
+        """Extract PVs and their parameters from a given archive file."""
         pv_list = []
         pv_params_list = []
-        with open(archive_filename,'r') as f:
-            lines = f.readlines() 
-            for line in lines:
-                if line.startswith('#'):
+
+        with open(archive_filename, 'r') as f:
+            for line in f:
+                if line.startswith('#') or line.strip() == '':
                     continue
-                if line.startswith('\n'):
-                    continue
-                else:
-                    line = line.strip('\n')
-                    parts = line.split(' ')
-                    pv_params = {'pvname': parts[0], 'scan': parts[1], 'method': parts[2]}
-                    pv_params_list.append(pv_params)
-                    pv_list.append(parts[0])
+                parts = line.strip().split()
+                pv_params = {'pvname': parts[0], 'scan': parts[1], 'method': parts[2]}
+                pv_list.append(parts[0])
+                pv_params_list.append(pv_params)
+
         return pv_list, pv_params_list
     
-    def get_status(self, pv_list:list[str], disconnected_status: bool = False,  **kwargs)->dict[str,dict]:
-        '''Gets all statuses of a stored list of PV's 
-          returns a report specific by kwargs for each pv '''
+    def get_status(self, pv_list: List[str], disconnected_status: bool = False, **filters) -> Dict[str, Dict]:
+        """Retrieve and filter PV status reports."""
         report = {}
+
         for pv in pv_list:
-            response =  self.get_pv_status(pv)
-            #pprint.pprint(response)
-            report_items = {pv : {k: v for k, v in response.items() 
-                            if k in kwargs and (kwargs[k] is None or response[k] == kwargs[k])}
+            response = self.get_pv_status(pv)
+            filtered = {
+                pv: {
+                    k: response[k]
+                    for k in filters
+                    if k in response and (
+                        filters[k] is None or
+                        (k == "last_event" and filters[k] in response[k]) or
+                        response[k] == filters[k]
+                    )
+                }
             }
-            if report_items[pv] != {}:
+
+
+            if filtered:
                 if disconnected_status:
-                    disc_stat = epics.PV(pv)
-                    #print(disc_stat)
-                    #pprint.pprint(report_items)
-                    report_items[pv].update({'connected pv': disc_stat.connected})
-                else:
-                    pass    
-                report.update(report_items)
+                    pv_connection = epics.PV(pv)
+                    filtered['connected pv'] = pv_connection.connected
+                report[pv] = filtered
+
         return report
 
-    def get_pv_status(self, pv:str):
-        '''Gets the status of a specific PV'''
-        payload = {'pv': pv}
-        url = self.web + "getPVStatus"
-        get_stats = requests.get(url, params=payload)
-        get_stats.raise_for_status()
-        if get_stats.status_code == requests.codes.ok:
-            stats = get_stats.json()
-            return stats[0]
 
 
-def setup_search_kwargs(args: argparse.Namespace):
-    #print(type(args))
-    search_kwargs = {}
-    # this will have to be thoroughly checked
-    if args.keyword == 'Unarchived':
-        search_kwargs.update({'status': 'Not being archived'})
-        return search_kwargs
-    elif args.keyword == 'Paused':
-        search_kwargs.update({'status': 'Paused'})
-        search_kwargs.update({'last_event': args.last_event}) 
-    elif args.keyword == 'Archived':
-        search_kwargs.update({'status': 'Being archived'})
 
-    else:
-        search_kwargs.update({'status': None})
-        search_kwargs.update({'last_event': args.last_event}) 
+# Functions not in util
+
+def collect_pvs(args: argparse.Namespace, util: ArchiverUtility):
+    """Collect PVs and parameters from provided file or directory."""
+    pv_dict = {}
+    param_dict = {}
+
+    if args.file:
+        pvs, params = util.parse_archive_file(args.file)
+        pv_dict[args.file] = pvs
+        param_dict[args.file] = params
+
+    elif args.directory and os.path.isdir(args.directory):
+        for filename in os.listdir(args.directory):
+            filepath = os.path.join(args.directory, filename)
+            if filepath.endswith('.archive') and os.path.isfile(filepath):
+                pvs, params = util.parse_archive_file(filepath)
+                pv_dict[filename] = pvs
+                param_dict[filename] = params
+
+    return pv_dict, param_dict
+
+
+def setup_search_kwargs(args: argparse.Namespace) -> Dict:
+    """Return filtered search kwargs based on CLI options."""
+    keyword_logic = {
+        'Unarchived': lambda: {'status': 'Not being archived'},
+        'Paused': lambda: {'status': 'Paused', 'last_event': args.last_event},
+        'Archived': lambda: {'status': 'Being archived'},
+        'All': lambda: {'status': None, 'last_event': args.last_event}
+    }
+
+    search_kwargs = keyword_logic[args.keyword]()
 
     if args.connection_state_archiver is not None:
-        search_kwargs.update({'connectionState': args.connection_state_archiver})
+        search_kwargs['connectionState'] = args.connection_state_archiver
 
     return search_kwargs
-    
 
-def main():
+
+def build_parser() -> argparse.ArgumentParser:
+    """Define and return command-line argument parser."""
     parser = argparse.ArgumentParser(
                     description=("Report tool for PVs in an archive file or folder." 
                     "-f filename or -d dirname, must provide one"))
@@ -125,35 +151,25 @@ def main():
                         type=lambda x: x.lower() == "true" if x.lower() in ("true", "false") else None,
                         choices=[True, False, None], default= None,
                         help= "Optional argument that displays whether the archiver has connection to the PV")
-    
+    return parser
 
+def main():
+    parser = build_parser()
     args = parser.parse_args()
+
     if not args.file and not args.directory:
         parser.print_help()
-    pv_dict = {}
-    pv_params_dict = {}
-    search_kwargs = setup_search_kwargs(args)
-    #print(search_kwargs)
+        return
+
     util = ArchiverUtility(args.archiver)
+    search_kwargs = setup_search_kwargs(args)
+    pv_dict, _ = collect_pvs(args, util)
 
-
-    if args.file:
-        pvs, params = util.parse_pvs_and_params_from_archive_file(args.file)
-        pv_dict.update({args.file : pvs})
-        pv_params_dict.update({args.file : params})
-    elif args.directory:
-        if os.path.isdir(args.directory):
-            for filename in os.listdir(args.directory):
-                filepath = os.path.join(args.directory, filename)
-                if os.path.isfile(filepath) and filepath.endswith('.archive'):
-                    pvs, params = util.parse_pvs_and_params_from_archive_file(args.file)
-                    pv_dict.update({filename : pvs})
-                    pv_params_dict.update({filename: params})
-
-    pv_statuses_dict = {}
     for filename, pvs in pv_dict.items():
-        status = util.get_status(pvs, disconnected_status= args.disconnected_status, **search_kwargs)
-        pprint.pprint(status)
+        statuses = util.get_status(pvs, disconnected_status=args.disconnected_status, **search_kwargs)
+        print(f"\n--- Report for: {filename} ---")
+        pprint.pprint(statuses)
+
 
 if __name__ == "__main__":
     main()
