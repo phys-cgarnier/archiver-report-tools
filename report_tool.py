@@ -72,10 +72,9 @@ class ArchiverUtility:
 
 
             if pv in filtered and filtered[pv] != {}:
-                print(filtered)
                 if disconnected_status:
                     pv_connection = epics.PV(pv)
-                    filtered['connected pv'] = pv_connection.connected
+                    filtered[pv]['connected pv'] = pv_connection.connected
                 report.update(filtered)
 
         return report
@@ -169,7 +168,7 @@ def main():
     for filename, pvs in pv_dict.items():
         statuses = util.get_status(pvs, disconnected_status=args.disconnected_status, **search_kwargs)
         print(f"\n--- Report for: {filename} ---")
-        #pprint.pprint(statuses)
+        pprint.pprint(statuses)
 
 
 if __name__ == "__main__":
