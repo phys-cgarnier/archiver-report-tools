@@ -64,7 +64,7 @@ class ArchiverUtility:
                     for k in filters
                     if k in response and (
                         filters[k] is None or
-                        (k == "last_event" and filters[k] in response[k]) or
+                        (k == "last_event" and filters[k] in response[k] or k == "last_event" and filters[k] is None) or
                         response[k] == filters[k]
                     )
                 }
@@ -72,7 +72,7 @@ class ArchiverUtility:
 
 
             if pv in filtered and filtered[pv] != {}:
-                if disconnected_status:
+                if disconnected_status or filters['status'] is None:
                     pv_connection = epics.PV(pv)
                     filtered[pv]['connected pv'] = pv_connection.connected
                 report.update(filtered)
@@ -116,7 +116,7 @@ def setup_search_kwargs(args: argparse.Namespace) -> Dict:
 
     search_kwargs = keyword_logic[args.keyword]()
 
-    if args.connection_state_archiver is not None:
+    if args.connection_state_archiver is not None or args.keyword == 'All':
         search_kwargs['connectionState'] = args.connection_state_archiver
 
     return search_kwargs
