@@ -54,6 +54,8 @@ class ArchiverUtility:
     
     def get_status(self, pv_list: List[str], disconnected_status: bool = False, **filters) -> Dict[str, Dict]:
         """Retrieve and filter PV status reports."""
+
+        #
         report = {}
 
         for pv in pv_list:
@@ -77,7 +79,7 @@ class ArchiverUtility:
                     pv_connection.wait_for_connection(timeout=1.0)
                     filtered[pv]['connected pv'] = pv_connection.connected
                 report.update(filtered)
-            pprint.pprint(filtered)
+                pprint.pprint(filtered)
         return report
 
 
@@ -109,9 +111,9 @@ def collect_pvs(args: argparse.Namespace, util: ArchiverUtility):
 def setup_search_kwargs(args: argparse.Namespace) -> Dict:
     """Return filtered search kwargs based on CLI options."""
     keyword_logic = {
-        'Unarchived': lambda: {'status': 'Not being archived'},
+        'Unarchived': lambda: {'status': 'Not being archived', 'lastEvent': args.last_event},
         'Paused': lambda: {'status': 'Paused', 'lastEvent': args.last_event},
-        'Archived': lambda: {'status': 'Being archived'},
+        'Archived': lambda: {'status': 'Being archived','lastEvent': args.last_event },
         'All': lambda: {'status': None, 'lastEvent': args.last_event}
     }
 
