@@ -8,6 +8,7 @@ import pprint
 import epics
 from typing import List, Dict
 import yaml
+from collections import OrderedDict
 
 class ArchiverUtility:
     def __init__(self, mode: str):
@@ -48,38 +49,40 @@ class ArchiverUtility:
 
         return pv_list, pv_params_list
     
-    def get_status(self, pv_list: List[str], disconnected_status: bool = False, **filters) -> Dict[str, Dict]:
+    def get_status(self, pv_list: List[str], **filters) -> Dict[str, Dict]:
         """Retrieve and filter PV status reports."""
 
-        #
         report = {}
-
-        for pv in pv_list:
+        for i, pv in enumerate(pv_list):
             response = self.get_pv_status(pv)
-            filtered = {
-                pv: {
-                    k: response[k]
-                    for k in filters
-                    if k in response and (
-                        filters[k] is None or
-                        (k == "lastEvent" and filters[k] in response[k]) or
-                        response[k] == filters[k]
-                    )
-                }
+            if response.get("status", "Invalid") not in filters.get("status"): 
+                continue
+            
+            filtered_entry = {pv : {"status": response.get("status")}}
+            
+            filtered_fields = {
+                k: response[k]
+                for k, want in filters.items()
+                if want is True and k in response and k != "disconnectedStatus"
             }
 
+            filtered_entry[pv].update(filtered_fields)
 
-            if pv in filtered and filtered[pv] != {}:
-                if disconnected_status or filters['status'] is None:
-                    pv_connection = epics.PV(pv)
-                    pv_connection.wait_for_connection(timeout=1.0)
-                    filtered[pv]['connected pv'] = pv_connection.connected
-                report.update(filtered)
-                pprint.pprint(filtered)
+            if filters.get("disconnectedStatus", None):
+                pv_connection = epics.PV(pv)
+                if pv_connection.wait_for_connection(timeout=.25):
+                    
+                   # skip to next pv if we are checking only for disconnected PVs
+                   # and the PV is connected, this can be made quicker probably.
+                   # but pyepics seems to have limitations with caget_many so I don't
+                   # know.
+                    continue
+                
+
+            report.update(filtered_entry)
+
         return report
-
-
-
+        
 
 # Functions not in util
 
@@ -106,18 +109,18 @@ def collect_pvs(args: argparse.Namespace, util: ArchiverUtility):
 
 def setup_search_kwargs(args: argparse.Namespace) -> Dict:
     """Return filtered search kwargs based on CLI options."""
+    
     keyword_logic = {
-        'Unarchived': lambda: {'status': 'Not being archived', 'lastEvent': args.last_event},
-        'Paused': lambda: {'status': 'Paused', 'lastEvent': args.last_event},
-        'Archived': lambda: {'status': 'Being archived','lastEvent': args.last_event },
-        'All': lambda: {'status': None, 'lastEvent': args.last_event}
+        'Unarchived': lambda: {'status': ['Not being archived']},
+        'Paused': lambda: {'status': ['Paused'] },
+        'Archived': lambda: {'status': ['Being archived'] },
+        'All': lambda: {'status': ['Being archived','Paused','Not being archived'],}
     }
 
     search_kwargs = keyword_logic[args.keyword]()
-
-    if args.connection_state_archiver is not None or args.keyword == 'All':
-        search_kwargs['connectionState'] = args.connection_state_archiver
-
+    for arg,val in vars(args).items():
+        if val == True:
+            search_kwargs.update({arg : val})
     return search_kwargs
 
 
@@ -127,53 +130,73 @@ def build_parser() -> argparse.ArgumentParser:
                     description=("Report tool for PVs in an archive file or folder." 
                     "-f filename or -d dirname, must provide one"))
     
+    parser.add_argument("-a", "--archiver", choices=['lcls', 'facet', 'dev'],
+                        default = 'lcls',
+                        type=str,
+                        help= "Optional argument passed for selecting the Archiver to query, default is lcls")
+
     parser.add_argument("-f", "--file",
+                        type=str,
                         help="Path to the archive file")
     
     parser.add_argument("-d", "--directory",
+                        type=str,
                         help="Path to a directory  containing archive files.")
     
+
+
     parser.add_argument("-k", "--keyword", choices=['Archived', 'Unarchived', 'Paused', 'All'],
                         default = 'All',
+                        type=str,
                         help="Reports on the passed status of all PVs, default is all")
-    parser.add_argument("-ds", "--disconnected_status", required= False, action="store_true",
-                        help= "Filter results to show only disconnected PVs in the control system matching all other criteria")
-    parser.add_argument("-a", "--archiver", choices=['lcls', 'facet', 'dev'],
-                        default = 'lcls',
-                        help= "Optional argument passed for selecting the Archiver to query, default is lcls")
-    parser.add_argument("-l", "--last_event", nargs="?",
-                        default = None, 
-                        help= ("Optional argument passed with Paused to apply additional date filter for last event.\n"
-                               "Does not need to be an exact string. example '3/27/25' with filter for last events on that day"))
     
-    parser.add_argument("-c", "--connection_state_archiver",
-                        type=lambda x: x.lower() == "true" if x.lower() in ("true", "false") else None,
-                        choices=[True, False, None], default= None,
+    parser.add_argument("-ds", "--disconnectedStatus",
+                        default=None,
+                        action="store_const",
+                        const=True,
+                        help= "Filter results to show only disconnected PVs in the control system matching all other criteria")
+    
+    parser.add_argument("-l", "--lastEvent",
+                        default = None,
+                        action="store_const",
+                        const=True,
+                        help= ("Optional argument to see the time and date of the last archived event"))
+    
+    parser.add_argument("-c", "--connectionState",
+                        default=None,
+                        action="store_const",
+                        const=True,
                         help= "Optional argument that displays whether the archiver has connection to the PV")
     return parser
 
 def main():
     parser = build_parser()
     args = parser.parse_args()
+    print(args)
 
     if not args.file and not args.directory:
         parser.print_help()
         return
 
     util = ArchiverUtility(args.archiver)
+    
     search_kwargs = setup_search_kwargs(args)
+    
+    
     pv_dict, _ = collect_pvs(args, util)
+    
 
-    for filename, pvs in pv_dict.items():
-        status = util.get_status(pvs, disconnected_status=args.disconnected_status, **search_kwargs)  
-        report_key = os.path.basename(filename).replace('.archive', '.qa')
-        report_data = {
-        "source_file": filename,
-        "statuses": status
-    }
+    
+    for filename, pvs_in_file in pv_dict.items():
+        print(filename)
+        file_report = util.get_status(pvs_in_file, **search_kwargs.copy()) 
+        #
+        for pv, stats in file_report.items():
+            status = stats.get("status", "")
+            last_event = stats.get("lastEvent", "")
+            conn = stats.get("connectionState", "")
 
-        with open(report_key, "w") as f:
-            yaml.dump(report_data, f, default_flow_style=False)
+            print(f"{pv:<35}  {status:<18}  {last_event:<28}  {conn}")
 
 
 
