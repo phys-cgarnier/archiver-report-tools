@@ -9,7 +9,10 @@ import epics
 from typing import List, Dict
 import yaml
 from collections import OrderedDict
-from glob import glob
+import glob
+## TODO: text extract for each subsystem
+## TODO: setup helper script to queue up subsystems
+## TODO: setup cron to job to call helper script
 
 class ArchiverUtility:
     def __init__(self, mode: str):
@@ -85,11 +88,35 @@ class ArchiverUtility:
             report.update(filtered_entry)
 
         return report
-        
+
+class PathGenerator():
+    def __init__(self,sub_sys:str = None,loca: str = None)->None:
+        self.base_path = '$IOC_DATA'
+        if sub_sys: 
+            self.sub_sys = sub_sys
+        else:
+            self.sub_sys = 'bp'
+
+        if loca:
+            self.area = loca
+            self.ioc_wildcard_string = '*-{}*-{}*/archive/*.archive'.format(self.area.lower(),self.sub_sys.lower())
+        else:
+           self.ioc_wildcard_string = '*-*-{}*/archive/*.archive'.format(self.sub_sys.lower()) 
+
+        self.path = self.base_path + self.ioc_wildcard_string
+        print(f'Wildcard Path: {self.path}')
+
+    def get_paths(self):
+        temp_paths = []
+        for file_path in glob.glob(self.path):
+            print(file_path)
+            temp_paths.append(file_path)
+        return temp_paths        
 
 # Functions not in util
 def generate_filepaths(subsystem:str):
-    pass
+    generator = PathGenerator(sub_sys = subsystem)
+    return generator.get_paths() 
 
 def collect_pvs(args: argparse.Namespace, util: ArchiverUtility):
     """Collect PVs and parameters from provided file or directory."""
@@ -111,6 +138,10 @@ def collect_pvs(args: argparse.Namespace, util: ArchiverUtility):
     
     elif args.subsystem:
         filepaths = generate_filepaths(args.subsystem)
+        for filepath in filepaths:
+            pvs = util.parse_archive_file(filepath)
+            filename = os.path.basename(filepath)
+            pv_dict[filename] = pvs
 
     return pv_dict #, param_dict
 
