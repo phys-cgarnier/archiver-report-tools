@@ -154,7 +154,8 @@ def setup_search_kwargs(args: argparse.Namespace) -> Dict:
         'Unarchived': lambda: {'status': ['Not being archived']},
         'Paused': lambda: {'status': ['Paused'] },
         'Archived': lambda: {'status': ['Being archived'] },
-        'All': lambda: {'status': ['Being archived','Paused','Not being archived'],}
+        'All': lambda: {'status': ['Being archived','Paused','Not being archived']},
+        'UP': lambda: {'status': ['Not being archived','Paused']}
     }
 
     search_kwargs = keyword_logic[args.keyword]()
@@ -175,17 +176,16 @@ def printer(pv_dict: Dict[str, Dict], archiver_utility: ArchiverUtility, search_
 
             print(f"{pv:<35}  {status:<18}  {last_event:<28}  {conn}")
 
-
-
 def subsystem_printer(subsystem:str,
                       pv_dict: Dict[str, Dict],
                       archiver_utility: ArchiverUtility, 
                       search_kwargs: Dict):
         
-        now = datetime.datetime.now().astimezone()
-        with open(f'reports/{subsystem}_report_{now}.txt','w') as f:
+        ts = datetime.datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S%z")
+        with open(f'reports/{subsystem}_report_{ts}.qa','w') as f:
             for filename, pvs_in_file in pv_dict.items():
-                print(filename, file=f)
+                print(filename)
+                print('\n', filename, file=f)
                 file_report = archiver_utility.get_status(pvs_in_file, **search_kwargs.copy()) 
                 for pv, stats in file_report.items():
                     status = stats.get("status", "")
@@ -217,7 +217,7 @@ def build_parser() -> argparse.ArgumentParser:
                         type=str,
                         help="Subsystem to check, pass bp to get all iocs in the wildcard format *-*-bp*")
 
-    parser.add_argument("-k", "--keyword", choices=['Archived', 'Unarchived', 'Paused', 'All'],
+    parser.add_argument("-k", "--keyword", choices=['Archived', 'Unarchived', 'Paused', 'All', 'UP'],
                         default = 'All',
                         type=str,
                         help="Reports on the passed status of all PVs, default is all")
@@ -274,3 +274,6 @@ if __name__ == "__main__":
 
 #TODO: finish subsystem printer
 #TODO: add keyword option for Unarchived + Paused
+
+
+
