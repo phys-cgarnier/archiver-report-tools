@@ -117,10 +117,38 @@ logging.basicConfig(
 )
 
 def local_now():
+    """
+    Return the current local time as a timezone-aware datetime.
 
+    Returns
+    -------
+    datetime
+        Current datetime with the system's local timezone applied.
+    """
     return datetime.now().astimezone()
 
 def next_run_time(hour: int = 1, minute: int = 0) -> datetime:
+    """
+    Compute the next scheduled run time at a fixed local hour and minute.
+
+    Parameters
+    ----------
+    hour : int, optional
+        Hour of day (0–23) when the job should run, by default 1.
+    minute : int, optional
+        Minute of the hour when the job should run, by default 0.
+
+    Returns
+    -------
+    datetime
+        Timezone-aware datetime representing the next scheduled run time.
+
+    Notes
+    -----
+    - If the target time today has already passed, the next run will be
+      scheduled for the following day.
+    - Seconds and microseconds are always set to zero.
+    """
     now = local_now()
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     if target <= now:
@@ -128,6 +156,24 @@ def next_run_time(hour: int = 1, minute: int = 0) -> datetime:
     return target
 
 def run_today_subsystems(max_parallel: int = 1):
+    
+    """
+    Execute all subsystems scheduled for the current day.
+
+    Parameters
+    ----------
+    max_parallel : int, optional
+        Maximum number of subsystems to run concurrently.
+        - 1 executes subsystems sequentially (default, safest).
+        - Values >1 enable limited parallel execution using threads.
+
+    Notes
+    -----
+    - Subsystems are selected based on the current local weekday.
+    - Parallel execution uses a semaphore to cap concurrency.
+    - This function blocks until all scheduled subsystem checks complete.
+    """
+
     today = local_now().strftime("%A")  # 'Monday', 'Tuesday', ...
     subsystems = subsystems_by_day.get(today, [])
 
@@ -159,6 +205,21 @@ def run_today_subsystems(max_parallel: int = 1):
             t.join()
 
 def check_subsystem(subsystem: str):
+    """
+    Run the archiver QA check for a single subsystem.
+
+    Parameters
+    ----------
+    subsystem : str
+        Subsystem abbreviation identifying the subsystem to check.
+
+    Notes
+    -----
+    - Executes `new_report_tool.py` as a subprocess.
+    - Logs start time, end time, execution duration, and success/failure.
+    - Any raised exception is logged with full traceback.
+    """
+
     start = datetime.now().astimezone()
     name = abbrev_name_lookup.get(subsystem, subsystem)
     logging.info(f"Starting archiver checks for {name} at {start.isoformat()}")
@@ -181,6 +242,24 @@ def check_subsystem(subsystem: str):
     )
 
 def scheduler_loop(run_hour: int = 1, run_minute: int = 0, max_parallel: int = 1):
+    """
+    Main scheduler loop that triggers daily subsystem checks.
+
+    Parameters
+    ----------
+    run_hour : int, optional
+        Hour of day (0–23) at which the daily run should start, by default 1.
+    run_minute : int, optional
+        Minute of the hour when the run should start, by default 0.
+    max_parallel : int, optional
+        Maximum number of subsystems to execute concurrently.
+
+    Notes
+    -----
+    - This function runs indefinitely.
+    - Uses local time to compute sleep duration until the next run.
+    - Intended to be invoked as a long-running process or service.
+    """
     logging.info(f"Scheduler started. Will run at {run_hour:02d}:{run_minute:02d} local time.")
     while True:
         run_at = next_run_time(run_hour, run_minute)
@@ -195,6 +274,5 @@ def scheduler_loop(run_hour: int = 1, run_minute: int = 0, max_parallel: int = 1
         logging.info(f"=== Daily run completed at {finished.isoformat()} ===")
 
 if __name__ == "__main__":
-    print('test?')
-    # max_parallel=1 => sequential; bump to 2/3 if you want to overlap subsystem runs
+    # max_parallel=1 => sequential; bump to 2 or 3 if you want to overlap subsystem runs (not tested extensively)
     scheduler_loop(run_hour=1, run_minute=0, max_parallel=1)
