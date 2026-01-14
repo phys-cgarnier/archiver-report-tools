@@ -1,19 +1,13 @@
 
-#TODO: last event should only be asked for if specified...
-#TODO: add dump file
 import argparse
 import os
-from re import sub
 import requests
-import pprint
 import epics
-from typing import List, Dict, Optional, Any
+from typing import List, Dict
 import glob
 import datetime
-from pathlib import Path
-## TODO: text extract for each subsystem
-## TODO: setup helper script to queue up subsystems
-## TODO: setup cron to job to call helper script
+
+#TODO: fix dev
 
 class ArchiverUtility:
     def __init__(self, mode: str):
@@ -271,9 +265,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-#TODO: finish subsystem printer
-#TODO: add keyword option for Unarchived + Paused
 
 
 
