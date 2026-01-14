@@ -3,13 +3,14 @@
 #TODO: add dump file
 import argparse
 import os
+from re import sub
 import requests
 import pprint
 import epics
-from typing import List, Dict
-import yaml
-from collections import OrderedDict
+from typing import List, Dict, Optional, Any
 import glob
+import datetime
+from pathlib import Path
 ## TODO: text extract for each subsystem
 ## TODO: setup helper script to queue up subsystems
 ## TODO: setup cron to job to call helper script
@@ -91,7 +92,7 @@ class ArchiverUtility:
 
 class PathGenerator():
     def __init__(self,sub_sys:str = None,loca: str = None)->None:
-        self.base_path = '$IOC_DATA'
+        self.base_path = '/mccfs2/u1/lcls/epics/ioc/data/' #'$IOC_DATA'
         if sub_sys: 
             self.sub_sys = sub_sys
         else:
@@ -162,6 +163,36 @@ def setup_search_kwargs(args: argparse.Namespace) -> Dict:
             search_kwargs.update({arg : val})
     return search_kwargs
 
+def printer(pv_dict: Dict[str, Dict], archiver_utility: ArchiverUtility, search_kwargs: Dict):
+
+    for filename, pvs_in_file in pv_dict.items():
+        print(filename)
+        file_report = archiver_utility.get_status(pvs_in_file, **search_kwargs.copy()) 
+        for pv, stats in file_report.items():
+            status = stats.get("status", "")
+            last_event = stats.get("lastEvent", "")
+            conn = stats.get("connectionState", "")
+
+            print(f"{pv:<35}  {status:<18}  {last_event:<28}  {conn}")
+
+
+
+def subsystem_printer(subsystem:str,
+                      pv_dict: Dict[str, Dict],
+                      archiver_utility: ArchiverUtility, 
+                      search_kwargs: Dict):
+        
+        now = datetime.datetime.now().astimezone()
+        with open(f'reports/{subsystem}_report_{now}.txt','w') as f:
+            for filename, pvs_in_file in pv_dict.items():
+                print(filename, file=f)
+                file_report = archiver_utility.get_status(pvs_in_file, **search_kwargs.copy()) 
+                for pv, stats in file_report.items():
+                    status = stats.get("status", "")
+                    last_event = stats.get("lastEvent", "")
+                    conn = stats.get("connectionState", "")
+
+                    print(f"{pv:<35}  {status:<18}  {last_event:<28}  {conn}", file=f)
 
 def build_parser() -> argparse.ArgumentParser:
     """Define and return command-line argument parser."""
@@ -208,6 +239,8 @@ def build_parser() -> argparse.ArgumentParser:
                         action="store_const",
                         const=True,
                         help= "Optional argument that displays whether the archiver has connection to the PV")
+    
+    parser.add_argument('--dump', action='store_true')
     return parser
 
 def main():
@@ -227,20 +260,17 @@ def main():
     pv_dict = collect_pvs(args, util)
     
 
+    if args.dump and args.subsystem:
+        subsystem_printer(args.subsystem, pv_dict, util, search_kwargs)
     
-    for filename, pvs_in_file in pv_dict.items():
-        print(filename)
-        file_report = util.get_status(pvs_in_file, **search_kwargs.copy()) 
-        #
-        for pv, stats in file_report.items():
-            status = stats.get("status", "")
-            last_event = stats.get("lastEvent", "")
-            conn = stats.get("connectionState", "")
-
-            print(f"{pv:<35}  {status:<18}  {last_event:<28}  {conn}")
+    else:
+        printer(pv_dict, util, search_kwargs)
 
 
 
 
 if __name__ == "__main__":
     main()
+
+#TODO: finish subsystem printer
+#TODO: add keyword option for Unarchived + Paused
